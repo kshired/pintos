@@ -2,10 +2,13 @@
 #include "console.h"
 #include "devices/input.h"
 #include "devices/shutdown.h"
+#include "filesys/directory.h"
 #include "filesys/file.h"
+#include "filesys/filesys.h"
 #include "filesys/inode.h"
 #include "process.h"
 #include "threads/interrupt.h"
+#include "threads/malloc.h"
 #include "threads/synch.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
@@ -19,6 +22,8 @@
 #define SYS_CALL_NUMS 22
 #define FD_START 3
 #define FD_END 128
+#define READDIR_MAX_LEN 14
+#define PATH_MAX_LEN 256
 
 struct lock file_lock;
 
@@ -51,6 +56,19 @@ int max_of_four_int(uint32_t *esp);
 int fibonnaci(uint32_t *esp);
 
 void chk_file(int f);
+
+// project5
+int chdir(uint32_t *esp);
+int mkdir(uint32_t *esp);
+int readdir(uint32_t *esp);
+int isdir(uint32_t *esp);
+int inumber(uint32_t *esp);
+
+struct dir
+{
+    struct inode *inode; /* Backing store. */
+    off_t pos;           /* Current position. */
+};
 
 /*
     1. Initialize syscall arg num for each syscall
@@ -90,6 +108,18 @@ void init(int *syscall_arg_num, int (*fp[SYS_CALL_NUMS])(uint32_t *))
     fp[SYS_TELL] = tell;
     syscall_arg_num[SYS_CLOSE] = 1;
     fp[SYS_CLOSE] = close;
+
+    // project 5
+    syscall_arg_num[SYS_CHDIR] = 1;
+    fp[SYS_CHDIR] = chdir;
+    syscall_arg_num[SYS_MKDIR] = 1;
+    fp[SYS_MKDIR] = mkdir;
+    syscall_arg_num[SYS_READDIR] = 2;
+    fp[SYS_READDIR] = readdir;
+    syscall_arg_num[SYS_ISDIR] = 1;
+    fp[SYS_ISDIR] = isdir;
+    syscall_arg_num[SYS_INUMBER] = 1;
+    fp[SYS_INUMBER] = inumber;
 }
 
 /*
@@ -125,8 +155,11 @@ static void syscall_handler(struct intr_frame *f)
 
     // check address is valid
     chk_valid_vaddr(esp, syscall_arg_num[*esp]);
-
-    /* 
+    if (fp[*esp] == NULL)
+    {
+        exit(-1);
+    }
+    /*
         Below syscalls don't have a return value.
     */
     if (*esp == SYS_HALT || *esp == SYS_EXIT || *esp == SYS_SEEK || *esp == SYS_CLOSE || *esp == SYS_MUNMAP)
@@ -175,18 +208,30 @@ int exit(uint32_t *esp)
         }
     }
     strlcpy(thread, thread_name(), i + 1);
-
     printf("%s: exit(%d)\n", thread, status);
-
     thread_current()->exit_status = status;
 
     for (i = FD_START; i < FD_END; ++i)
     {
         if (thread_current()->file_descriptor[i] != NULL)
         {
-            file_close(thread_current()->file_descriptor[i]);
+            struct inode *node = file_get_inode(thread_current()->file_descriptor[i]);
+            if (node != NULL && get_deny_write_cnt(node) > 0)
+            {
+                if (inode_is_dir(node))
+                {
+                    dir_close(thread_current()->file_descriptor[i]);
+                }
+                else
+                {
+                    file_close(thread_current()->file_descriptor[i]);
+                }
+            }
+            thread_current()->file_descriptor[i] = NULL;
         }
     }
+    if (thread_current()->working_dir)
+        dir_close(thread_current()->working_dir);
     thread_exit();
     return 0;
 }
@@ -219,7 +264,6 @@ int write(uint32_t *esp)
     int fd = (int)esp[1];
     void *buffer = (void *)esp[2];
     unsigned size = (int)esp[3];
-
     if (fd == STDOUT)
     {
         lock_acquire(&file_lock);
@@ -332,9 +376,7 @@ int create(uint32_t *esp)
     {
         exit(-1);
     }
-    lock_acquire(&file_lock);
     int val = filesys_create(file, size);
-    lock_release(&file_lock);
     return val;
 }
 
@@ -345,16 +387,14 @@ int remove(uint32_t *esp)
     {
         exit(-1);
     }
-    lock_acquire(&file_lock);
     int val = filesys_remove(file);
-    lock_release(&file_lock);
     return val;
 }
 
 int open(uint32_t *esp)
 {
     char *file = (char *)esp[1];
-
+    int i;
     if (file == NULL)
     {
         exit(-1);
@@ -366,7 +406,7 @@ int open(uint32_t *esp)
     {
         return -1;
     }
-    int i;
+
     for (i = FD_START; i < FD_END && thread_current()->file_descriptor[i] != NULL; ++i)
     {
     }
@@ -374,7 +414,7 @@ int open(uint32_t *esp)
     {
         return -1;
     }
-    if (!strcmp(thread_name(), file))
+    if (strcmp(thread_name(), file) == 0)
     {
         file_deny_write(f);
     }
@@ -390,10 +430,8 @@ int close(uint32_t *esp)
     chk_file(f);
     struct file *fp;
     fp = thread_current()->file_descriptor[f];
-    thread_current()->file_descriptor[f] = NULL;
-    lock_acquire(&file_lock);
     file_close(fp);
-    lock_release(&file_lock);
+    thread_current()->file_descriptor[f] = NULL;
     return 0;
 }
 
@@ -401,9 +439,7 @@ int filesize(uint32_t *esp)
 {
     int f = (int)esp[1];
     chk_file(f);
-    lock_acquire(&file_lock);
     int val = file_length(thread_current()->file_descriptor[f]);
-    lock_release(&file_lock);
     return val;
 }
 
@@ -412,9 +448,7 @@ int seek(uint32_t *esp)
     int f = (int)esp[1];
     chk_file(f);
     unsigned pos = (unsigned)esp[2];
-    lock_acquire(&file_lock);
     file_seek(thread_current()->file_descriptor[f], pos);
-    lock_release(&file_lock);
     return 0;
 }
 
@@ -422,16 +456,78 @@ int tell(uint32_t *esp)
 {
     int f = (int)esp[1];
     chk_file(f);
-    lock_acquire(&file_lock);
-    int val = file_tell(thread_current()->file_descriptor[f]);
-    lock_release(&file_lock);
-    return val;
+
+    return file_tell(thread_current()->file_descriptor[f]);
 }
 
 void chk_file(int f)
 {
+    if (f < FD_START && f >= FD_END)
+    {
+        exit(-1);
+    }
     if (thread_current()->file_descriptor[f] == NULL)
     {
         exit(-1);
     }
+}
+
+// project 5
+int chdir(uint32_t *esp)
+{
+    char *path = (char *)esp[1];
+    return filesys_change_dir(path);
+}
+
+int mkdir(uint32_t *esp)
+{
+    char *dir = (char *)esp[1];
+
+    return filesys_create_dir(dir);
+}
+
+int readdir(uint32_t *esp)
+{
+    int f = (int)esp[1];
+    char *name = (char *)esp[2];
+    int i = 0;
+    bool result = true;
+
+    chk_file(f);
+
+    struct file *file = thread_current()->file_descriptor[f];
+
+    struct inode *inode = file_get_inode(file);
+    if (inode == NULL)
+    {
+        return false;
+    }
+    if (!inode_is_dir(inode))
+    {
+        return false;
+    }
+
+    struct dir *dir = dir_open(inode);
+
+    dir->pos = file_tell(file);
+    result = dir_readdir(dir, name);
+    file_seek(file, dir->pos);
+
+    return result;
+}
+
+int isdir(uint32_t *esp)
+{
+    int f = (int)esp[1];
+    chk_file(f);
+
+    return inode_is_dir(file_get_inode(thread_current()->file_descriptor[f]));
+}
+
+int inumber(uint32_t *esp)
+{
+    int f = (int)esp[1];
+    chk_file(f);
+
+    return inode_get_inumber(file_get_inode(thread_current()->file_descriptor[f]));
 }

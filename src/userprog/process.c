@@ -139,8 +139,8 @@ int process_wait(tid_t child_tid)
         if (t->tid == child_tid)
         {
             sema_down(&(t->child_lock));
-            exit_status = t->exit_status;
             list_remove(&(t->child_elem));
+            exit_status = t->exit_status;
             sema_up(&(t->remove_lock));
             return exit_status;
         }
@@ -170,8 +170,8 @@ void process_exit(void)
         pagedir_activate(NULL);
         pagedir_destroy(pd);
     }
-    sema_up(&(cur->child_lock));
-    sema_down(&(cur->remove_lock));
+    //  sema_up(&(cur->child_lock));
+    //  sema_down(&(cur->remove_lock));
 }
 
 /* Sets up the CPU for running user code in the current
