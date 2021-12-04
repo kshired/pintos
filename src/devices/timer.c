@@ -243,9 +243,9 @@ static void
 real_time_sleep(int64_t num, int32_t denom)
 {
     /* Convert NUM/DENOM seconds into timer ticks, rounding down.
-          
-        (NUM / DENOM) s          
-     ---------------------- = NUM * TIMER_FREQ / DENOM ticks. 
+
+        (NUM / DENOM) s
+     ---------------------- = NUM * TIMER_FREQ / DENOM ticks.
      1 s / TIMER_FREQ ticks
   */
     int64_t ticks = num * TIMER_FREQ / denom;

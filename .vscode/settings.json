@@ -1,0 +1,31 @@
+{
+  "files.associations": {
+    "cache.h": "c",
+    "directory.h": "c",
+    "block.h": "c",
+    "stdint.h": "c",
+    "string.h": "c",
+    "*.inc": "c",
+    "*.tcc": "c",
+    "fstream": "c",
+    "synch.h": "c",
+    "palloc.h": "c",
+    "syscall.h": "c",
+    "filesys.h": "c",
+    "inode.h": "c",
+    "streambuf": "c",
+    "string_view": "c",
+    "initializer_list": "c",
+    "array": "c",
+    "hashtable": "c",
+    "utility": "c"
+  },
+  "[c]":{
+    "editor.wordBasedSuggestions": false,
+    "editor.suggest.insertMode": "replace",
+    "editor.semanticHighlighting.enabled": true,
+    "editor.formatOnSave": true,
+    "editor.defaultFormatter": "ms-vscode.cpptools"
+  },
+  "C_Cpp.errorSquiggles": "Disabled"
+}
