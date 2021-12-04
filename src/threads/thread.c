@@ -1,4 +1,7 @@
 #include "threads/thread.h"
+#include "filesys/directory.h"
+#include "filesys/filesys.h"
+#include "filesys/inode.h"
 #include "threads/flags.h"
 #include "threads/interrupt.h"
 #include "threads/intr-stubs.h"
@@ -93,6 +96,18 @@ int compare(struct list_elem *l, struct list_elem *s, void *aux)
 
    It is not safe to call thread_current() until this function
    finishes. */
+
+void premption(void)
+{
+    enum intr_level old_level;
+    old_level = intr_disable();
+    if (!list_empty(&ready_list) && thread_current()->priority <
+                                        list_entry(list_front(&ready_list), struct thread, elem)->priority)
+    {
+        thread_yield();
+    }
+    intr_set_level(old_level);
+}
 
 void thread_init(void)
 {
@@ -190,6 +205,11 @@ tid_t thread_create(const char *name, int priority,
     /* Initialize thread. */
     init_thread(t, name, priority);
     tid = t->tid = allocate_tid();
+
+    if (thread_current()->working_dir)
+    {
+        t->working_dir = dir_reopen(thread_current()->working_dir);
+    }
 
     /* Stack frame for kernel_thread(). */
     kf = alloc_frame(t, sizeof *kf);
@@ -290,11 +310,24 @@ tid_t thread_tid(void)
 void thread_exit(void)
 {
     ASSERT(!intr_context());
-
 #ifdef USERPROG
     process_exit();
 #endif
 
+    struct list_elem *child;
+    for (child = list_begin(&thread_current()->children_threads);
+         child != list_end(&thread_current()->children_threads);)
+    {
+        struct thread *t = list_entry(child, struct thread, child_elem);
+        child = list_remove(child);
+        sema_up(&t->remove_lock);
+    }
+
+    // printf(next_thread_to_run()->name);
+
+    sema_up(&thread_current()->child_lock);
+
+    sema_down(&thread_current()->remove_lock);
     /* Remove thread from all threads list, set our status to dying,
      and schedule another process.  That process will destroy us
      when it calls thread_schedule_tail(). */
@@ -302,7 +335,6 @@ void thread_exit(void)
     list_remove(&thread_current()->allelem);
     thread_current()->status = THREAD_DYING;
     schedule();
-    NOT_REACHED();
 }
 
 /* Yields the CPU.  The current thread is not put to sleep and
@@ -346,11 +378,13 @@ void thread_set_priority(int new_priority)
     {
         return;
     }
+    intr_disable();
     thread_current()->priority = new_priority;
     if (new_priority < before_priority)
     {
-        thread_yield();
+        premption();
     }
+    intr_enable();
 }
 
 /* Returns the current thread's priority. */
@@ -582,16 +616,17 @@ init_thread(struct thread *t, const char *name, int priority)
     t->stack = (uint8_t *)t + PGSIZE;
     t->priority = priority;
     t->magic = THREAD_MAGIC;
+    t->working_dir = NULL;
 
     old_level = intr_disable();
     list_push_back(&all_list, &t->allelem);
     intr_set_level(old_level);
-#ifdef USERPROG
+
     sema_init(&(t->child_lock), 0);
     sema_init(&(t->remove_lock), 0);
     list_init(&(t->children_threads));
-    list_push_back(&(running_thread()->children_threads), &(t->child_elem));
-#endif
+    list_push_back(&running_thread()->children_threads, &t->child_elem);
+
     int i;
     for (i = 0; i < 128; ++i)
     {
@@ -654,7 +689,6 @@ void thread_schedule_tail(struct thread *prev)
 
     /* Mark us as running. */
     cur->status = THREAD_RUNNING;
-
     /* Start new time slice. */
     thread_ticks = 0;
 
@@ -692,7 +726,6 @@ schedule(void)
     ASSERT(intr_get_level() == INTR_OFF);
     ASSERT(cur->status != THREAD_RUNNING);
     ASSERT(is_thread(next));
-
     if (cur != next)
         prev = switch_threads(cur, next);
     thread_schedule_tail(prev);

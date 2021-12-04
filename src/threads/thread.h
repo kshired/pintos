@@ -3,6 +3,7 @@
 
 #include "synch.h"
 #include <debug.h>
+#include <hash.h>
 #include <list.h>
 #include <stdint.h>
 
@@ -114,6 +115,8 @@ struct thread
 
     int recent_cpu;
     int nice;
+
+    struct dir *working_dir;
 };
 
 /* If false (default), use round-robin scheduler.
@@ -156,4 +159,5 @@ int get_max_priority(void);
 int thread_set_load_avg_and_recent_cpu(void);
 void set_priority(void);
 
+void premption(void);
 #endif /* threads/thread.h */

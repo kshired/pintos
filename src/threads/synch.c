@@ -135,10 +135,10 @@ void sema_up(struct semaphore *sema)
     }
 
     sema->value++;
-
+    // premption();
     intr_set_level(tmp);
 
-    //thread_yield();
+    // thread_yield();
 }
 
 static void sema_test_helper(void *sema_);
@@ -320,7 +320,7 @@ void cond_wait(struct condition *cond, struct lock *lock)
 
     sema_init(&waiter.semaphore, 0);
     list_insert_ordered(&cond->waiters, &waiter.elem, compare_priority, 0);
-    //list_push_back(&cond->waiters, &waiter.elem);
+    // list_push_back(&cond->waiters, &waiter.elem);
     lock_release(lock);
     sema_down(&waiter.semaphore);
     lock_acquire(lock);
