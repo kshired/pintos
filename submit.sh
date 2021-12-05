@@ -8,7 +8,7 @@ echo -e "THE RESULT OF THIS SCRIPT IS STRICTLY AT YOUR OWN RISK.\n\n\n\n"
 
 echo -e "Input Pintos Project Number. e.g. 1/2/3/4"
 read -p "Project Number: " PRJ
-if [ ${PRJ} -gt 4 ] || [ ${PRJ} -lt 1 ]
+if [ ${PRJ} -gt 5 ] || [ ${PRJ} -lt 1 ]
 then
     echo -e "Wrong Project Number" 
     exit 1
