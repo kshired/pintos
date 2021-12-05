@@ -17,7 +17,8 @@
 - System Calls
 - Additional System Calls ( fibonacci, max_of_four_int )
 
-모두 구현 완료
+**모두 구현 완료**
+
 
 [보고서 및 소스코드](https://github.com/kshired/pintos/blob/main/os_prj1_20171612.tar.gz)
 
@@ -26,7 +27,7 @@
 - System Calls ( filesystem )
 - Synchronization in Filesystem
 
-모두 구현 완료
+**모두 구현 완료**
 
 [보고서 및 소스코드](https://github.com/kshired/pintos/blob/main/os_prj2_20171612.tar.gz)
 
@@ -35,7 +36,7 @@
 - Priority Scheduling
 - Advanced Scheduler
 
-모두 구현 완료 
+**모두 구현 완료**
 
 > 참고: Priority Donation은 구현 범위가 아니라 구현하지 않았습니다.
 
@@ -47,7 +48,7 @@
 - Disk Swap
 - Stack Growth
 
-Paget Fault Handler 일부분 + Stack Growth 구현
+**Paget Fault Handler 일부분 + Stack Growth 구현**
 
 > 참고 : 테스트 결과 16개 중 11개 통과
 
@@ -59,7 +60,7 @@ Paget Fault Handler 일부분 + Stack Growth 구현
 - Extensible File & File Growth
 - Subdirectory
 
-모두 구현 완료
+**모두 구현 완료**
 
 테스트 결과 
 
