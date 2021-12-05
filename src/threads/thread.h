@@ -116,7 +116,7 @@ struct thread
     int recent_cpu;
     int nice;
 
-    struct dir *working_dir;
+    struct dir *cur_dir;
 };
 
 /* If false (default), use round-robin scheduler.

@@ -230,8 +230,8 @@ int exit(uint32_t *esp)
             thread_current()->file_descriptor[i] = NULL;
         }
     }
-    if (thread_current()->working_dir)
-        dir_close(thread_current()->working_dir);
+    if (thread_current()->cur_dir)
+        dir_close(thread_current()->cur_dir);
     thread_exit();
     return 0;
 }

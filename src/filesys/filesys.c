@@ -34,7 +34,7 @@ void filesys_init(bool format)
     if (format)
         do_format();
 
-    thread_current()->working_dir = dir_open_root();
+    thread_current()->cur_dir = dir_open_root();
     free_map_open();
 }
 
@@ -160,7 +160,7 @@ struct dir *parse_path(char *name, char *file_name)
     }
     else
     {
-        dir = dir_reopen(thread_current()->working_dir);
+        dir = dir_reopen(thread_current()->cur_dir);
     }
 
     char *token, *next_token, *save_ptr;
@@ -249,7 +249,7 @@ bool filesys_change_dir(char *path)
 
     free(path_copy);
     free(name);
-    dir_close(thread_current()->working_dir);
-    thread_current()->working_dir = dir;
+    dir_close(thread_current()->cur_dir);
+    thread_current()->cur_dir = dir;
     return true;
 }

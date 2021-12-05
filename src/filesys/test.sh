@@ -3,8 +3,6 @@ make clean
 make
 cd build
 clear
-
-# testfunc(){
 pintos-mkdisk tmp.dsk --filesys-size=2
 pintos -v -k -T 60 --qemu  --disk=tmp.dsk -p tests/filesys/extended/dir-empty-name -a dir-empty-name -p tests/filesys/extended/tar -a tar -- -q  -f run dir-empty-name < /dev/null 2> tests/filesys/extended/dir-empty-name.errors > tests/filesys/extended/dir-empty-name.output
 pintos -v -k -T 60  --qemu --disk=tmp.dsk -g fs.tar -a tests/filesys/extended/dir-empty-name.tar -- -q  run 'tar fs.tar /' < /dev/null 2> tests/filesys/extended/dir-empty-name-persistence.errors > tests/filesys/extended/dir-empty-name-persistence.output
@@ -165,8 +163,3 @@ perl -I../.. ../../tests/filesys/extended/grow-sparse-persistence.ck tests/files
 perl -I../.. ../../tests/filesys/extended/grow-tell-persistence.ck tests/filesys/extended/grow-tell-persistence tests/filesys/extended/grow-tell-persistence.result
 perl -I../.. ../../tests/filesys/extended/grow-two-files-persistence.ck tests/filesys/extended/grow-two-files-persistence tests/filesys/extended/grow-two-files-persistence.result
 perl -I../.. ../../tests/filesys/extended/syn-rw-persistence.ck tests/filesys/extended/syn-rw-persistence tests/filesys/extended/syn-rw-persistence.result
-# } 
-
-# echo "test start"
-# testfunc > test.result
-# echo "test done"
