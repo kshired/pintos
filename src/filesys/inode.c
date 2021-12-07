@@ -16,6 +16,7 @@
 #define NORMAL_DIRECT 0
 #define INDIRECT 1
 #define DOUBLE_INDIRECT 2
+#define SECTOR_MAGIC 0xFFFFFFFF
 
 struct sector_location
 {
@@ -56,6 +57,7 @@ static void locate_byte(off_t, struct sector_location *);
 static bool register_sector(struct inode_disk *, block_sector_t, struct sector_location);
 static bool inode_update_file_length(struct inode_disk *, off_t, off_t);
 static void free_inode_sectors(struct inode_disk *);
+static void init_indirect_block(struct inode_indirect_block *block);
 
 /* Returns the block device sector that contains byte offset POS
    within INODE.
@@ -78,15 +80,15 @@ static block_sector_t byte_to_sector(const struct inode_disk *inode_disk, off_t 
     else if (sec_loc.directness == INDIRECT)
     {
         struct inode_indirect_block *ind_block = (struct inode_indirect_block *)malloc(BLOCK_SECTOR_SIZE);
-        block_sector_t table_sector = inode_disk->indirect_block_sec;
+        block_sector_t sector = inode_disk->indirect_block_sec;
 
-        if (table_sector == (block_sector_t)-1)
+        if (sector == SECTOR_MAGIC)
         {
             free(ind_block);
             return -1;
         }
 
-        buffer_cache_read(table_sector, ind_block, 0, sizeof(struct inode_indirect_block), 0);
+        buffer_cache_read(sector, ind_block, 0, sizeof(struct inode_indirect_block), 0);
         block_sector_t result_sector = ind_block->map_table[sec_loc.index1];
         free(ind_block);
 
@@ -95,26 +97,26 @@ static block_sector_t byte_to_sector(const struct inode_disk *inode_disk, off_t 
     else if (sec_loc.directness == DOUBLE_INDIRECT)
     {
         struct inode_indirect_block *ind_block = (struct inode_indirect_block *)malloc(BLOCK_SECTOR_SIZE);
-        block_sector_t table_sector = inode_disk->double_indirect_block_sec;
+        block_sector_t sector = inode_disk->double_indirect_block_sec;
 
-        if (table_sector == (block_sector_t)-1)
+        if (sector == SECTOR_MAGIC)
         {
             free(ind_block);
             return -1;
         }
 
-        buffer_cache_read(table_sector, ind_block, 0, sizeof(struct inode_indirect_block), 0);
+        buffer_cache_read(sector, ind_block, 0, sizeof(struct inode_indirect_block), 0);
 
-        table_sector = ind_block->map_table[sec_loc.index2];
-        if (table_sector == (block_sector_t)-1)
+        sector = ind_block->map_table[sec_loc.index1];
+        if (sector == SECTOR_MAGIC)
         {
             free(ind_block);
             return -1;
         }
 
-        buffer_cache_read(table_sector, ind_block, 0, sizeof(struct inode_indirect_block), 0);
+        buffer_cache_read(sector, ind_block, 0, sizeof(struct inode_indirect_block), 0);
 
-        block_sector_t result_sector = ind_block->map_table[sec_loc.index1];
+        block_sector_t result_sector = ind_block->map_table[sec_loc.index2];
         free(ind_block);
 
         return result_sector;
@@ -150,7 +152,7 @@ bool inode_create(block_sector_t sector, off_t length, bool is_dir)
     disk_inode = calloc(1, sizeof *disk_inode);
     if (disk_inode != NULL)
     {
-        memset(disk_inode, -1, sizeof(struct inode_disk));
+        init_indirect_block(disk_inode);
         disk_inode->magic = INODE_MAGIC;
         disk_inode->is_dir = is_dir;
 
@@ -273,8 +275,6 @@ off_t inode_read_at(struct inode *inode, void *buffer_, off_t size, off_t offset
     {
         /* Disk sector to read, starting byte offset within sector. */
         block_sector_t sector_idx = byte_to_sector(&inode_disk, offset);
-        if (sector_idx == (block_sector_t)-1)
-            break;
         int sector_ofs = offset % BLOCK_SECTOR_SIZE;
 
         /* Bytes left in inode, bytes left in sector, lesser of the two. */
@@ -384,8 +384,8 @@ static void locate_byte(off_t pos, struct sector_location *sec_loc)
     {
         pos -= INDIRECT_BLOCK_ENTRIES + DIRECT_BLOCK_ENTRIES;
         sec_loc->directness = DOUBLE_INDIRECT;
-        sec_loc->index1 = pos % INDIRECT_BLOCK_ENTRIES;
-        sec_loc->index2 = pos / INDIRECT_BLOCK_ENTRIES;
+        sec_loc->index1 = pos / INDIRECT_BLOCK_ENTRIES;
+        sec_loc->index2 = pos % INDIRECT_BLOCK_ENTRIES;
     }
     else
     {
@@ -393,11 +393,20 @@ static void locate_byte(off_t pos, struct sector_location *sec_loc)
     }
 }
 
+static void init_indirect_block(struct inode_indirect_block *block)
+{
+    int i;
+    for (i = 0; i < INDIRECT_BLOCK_ENTRIES; ++i)
+    {
+        block->map_table[i] = SECTOR_MAGIC;
+    }
+}
+
 static bool register_sector(struct inode_disk *inode_disk, block_sector_t new_sector, struct sector_location sec_loc)
 {
 
-    struct inode_indirect_block first_block, second_block;
-    block_sector_t *table_sector;
+    struct inode_indirect_block first, second;
+    block_sector_t *sector;
 
     if (sec_loc.directness == NORMAL_DIRECT)
     {
@@ -406,12 +415,12 @@ static bool register_sector(struct inode_disk *inode_disk, block_sector_t new_se
     }
     else if (sec_loc.directness == INDIRECT)
     {
-        table_sector = &inode_disk->indirect_block_sec;
-        if (*table_sector == (block_sector_t)-1)
+        sector = &inode_disk->indirect_block_sec;
+        if (*sector == SECTOR_MAGIC)
         {
-            if (free_map_allocate(1, table_sector))
+            if (free_map_allocate(1, sector))
             {
-                memset(&second_block, -1, sizeof(struct inode_indirect_block));
+                init_indirect_block(&second);
             }
             else
             {
@@ -420,25 +429,25 @@ static bool register_sector(struct inode_disk *inode_disk, block_sector_t new_se
         }
         else
         {
-            buffer_cache_read(*table_sector, &second_block, 0, sizeof(struct inode_indirect_block), 0);
+            buffer_cache_read(*sector, &second, 0, sizeof(struct inode_indirect_block), 0);
         }
 
-        if (second_block.map_table[sec_loc.index1] == (block_sector_t)-1)
+        if (second.map_table[sec_loc.index1] == SECTOR_MAGIC)
         {
-            second_block.map_table[sec_loc.index1] = new_sector;
+            second.map_table[sec_loc.index1] = new_sector;
         }
 
-        buffer_cache_write(*table_sector, &second_block, 0, sizeof(struct inode_indirect_block), 0);
+        buffer_cache_write(*sector, &second, 0, sizeof(struct inode_indirect_block), 0);
         return true;
     }
     else if (sec_loc.directness == DOUBLE_INDIRECT)
     {
-        table_sector = &inode_disk->double_indirect_block_sec;
-        if (*table_sector == (block_sector_t)-1)
+        sector = &inode_disk->double_indirect_block_sec;
+        if (*sector == SECTOR_MAGIC)
         {
-            if (free_map_allocate(1, table_sector))
+            if (free_map_allocate(1, sector))
             {
-                memset(&first_block, -1, sizeof(struct inode_indirect_block));
+                init_indirect_block(&first);
             }
             else
             {
@@ -447,21 +456,21 @@ static bool register_sector(struct inode_disk *inode_disk, block_sector_t new_se
         }
         else
         {
-            buffer_cache_read(*table_sector, &first_block, 0, sizeof(struct inode_indirect_block), 0);
+            buffer_cache_read(*sector, &first, 0, sizeof(struct inode_indirect_block), 0);
         }
-        table_sector = &first_block.map_table[sec_loc.index2];
+        sector = &first.map_table[sec_loc.index1];
 
-        if (*table_sector == (block_sector_t)-1)
+        if (*sector == SECTOR_MAGIC)
         {
-            if (free_map_allocate(1, table_sector))
+            if (free_map_allocate(1, sector))
             {
-                memset(&second_block, -1, sizeof(struct inode_indirect_block));
-                if (second_block.map_table[sec_loc.index1] == (block_sector_t)-1)
+                init_indirect_block(&second);
+                if (second.map_table[sec_loc.index2] == SECTOR_MAGIC)
                 {
-                    second_block.map_table[sec_loc.index1] = new_sector;
+                    second.map_table[sec_loc.index2] = new_sector;
                 }
-                buffer_cache_write(inode_disk->double_indirect_block_sec, &first_block, 0, sizeof(struct inode_indirect_block), 0);
-                buffer_cache_write(*table_sector, &second_block, 0, sizeof(struct inode_indirect_block), 0);
+                buffer_cache_write(inode_disk->double_indirect_block_sec, &first, 0, sizeof(struct inode_indirect_block), 0);
+                buffer_cache_write(*sector, &second, 0, sizeof(struct inode_indirect_block), 0);
             }
             else
             {
@@ -470,12 +479,12 @@ static bool register_sector(struct inode_disk *inode_disk, block_sector_t new_se
         }
         else
         {
-            buffer_cache_read(*table_sector, &second_block, 0, sizeof(struct inode_indirect_block), 0);
-            if (second_block.map_table[sec_loc.index1] == (block_sector_t)-1)
+            buffer_cache_read(*sector, &second, 0, sizeof(struct inode_indirect_block), 0);
+            if (second.map_table[sec_loc.index2] == SECTOR_MAGIC)
             {
-                second_block.map_table[sec_loc.index1] = new_sector;
+                second.map_table[sec_loc.index2] = new_sector;
             }
-            buffer_cache_write(*table_sector, &second_block, 0, sizeof(struct inode_indirect_block), 0);
+            buffer_cache_write(*sector, &second, 0, sizeof(struct inode_indirect_block), 0);
         }
 
         return true;
@@ -494,7 +503,7 @@ static bool inode_update_file_length(struct inode_disk *inode_disk, off_t start_
     while (start_pos <= end_pos)
     {
         block_sector_t sector = byte_to_sector(inode_disk, start_pos);
-        if (sector != (block_sector_t)-1)
+        if (sector != SECTOR_MAGIC)
         {
             start_pos += BLOCK_SECTOR_SIZE;
             continue;
@@ -524,18 +533,18 @@ static bool inode_update_file_length(struct inode_disk *inode_disk, off_t start_
 static void free_inode_sectors(struct inode_disk *inode_disk)
 {
     int i, j;
-    if (inode_disk->double_indirect_block_sec != (block_sector_t)-1)
+    if (inode_disk->double_indirect_block_sec != SECTOR_MAGIC)
     {
         struct inode_indirect_block *ind_block_1 = (struct inode_indirect_block *)malloc(BLOCK_SECTOR_SIZE);
         buffer_cache_read(inode_disk->double_indirect_block_sec, ind_block_1, 0, sizeof(struct inode_indirect_block), 0);
         i = 0;
-        while (ind_block_1->map_table[i] != (block_sector_t)-1)
+        while (ind_block_1->map_table[i] != SECTOR_MAGIC)
         {
             j = 0;
             struct inode_indirect_block *ind_block_2 = (struct inode_indirect_block *)malloc(BLOCK_SECTOR_SIZE);
             buffer_cache_read(ind_block_2->map_table[j], ind_block_2, 0, sizeof(struct inode_indirect_block), 0);
 
-            while (ind_block_2->map_table[j] != (block_sector_t)-1)
+            while (ind_block_2->map_table[j] != SECTOR_MAGIC)
             {
                 free_map_release(ind_block_2->map_table[j], 1);
                 j++;
@@ -548,12 +557,12 @@ static void free_inode_sectors(struct inode_disk *inode_disk)
         return;
     }
 
-    if (inode_disk->indirect_block_sec != (block_sector_t)-1)
+    if (inode_disk->indirect_block_sec != SECTOR_MAGIC)
     {
         struct inode_indirect_block *ind_block = (struct inode_indirect_block *)malloc(BLOCK_SECTOR_SIZE);
         buffer_cache_read(inode_disk->indirect_block_sec, ind_block, 0, sizeof(struct inode_indirect_block), 0);
         i = 0;
-        while (ind_block->map_table[i] != (block_sector_t)-1)
+        while (ind_block->map_table[i] != SECTOR_MAGIC)
         {
             free_map_release(ind_block->map_table[i], 1);
             i++;
@@ -563,7 +572,7 @@ static void free_inode_sectors(struct inode_disk *inode_disk)
     }
 
     i = 0;
-    while (inode_disk->direct_map_table[i] != (block_sector_t)-1)
+    while (inode_disk->direct_map_table[i] != SECTOR_MAGIC)
     {
         free_map_release(inode_disk->direct_map_table[i], 1);
         i++;

@@ -2,3 +2,4 @@ build
 bochsrc.txt
 bochsout.txt
 *.md
+*.sh
