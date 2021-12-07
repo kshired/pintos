@@ -434,7 +434,6 @@ static bool register_sector(struct inode_disk *inode_disk, block_sector_t new_se
     else if (sec_loc.directness == DOUBLE_INDIRECT)
     {
         table_sector = &inode_disk->double_indirect_block_sec;
-        bool first_dirty = false;
         if (*table_sector == (block_sector_t)-1)
         {
             if (free_map_allocate(1, table_sector))
@@ -457,7 +456,12 @@ static bool register_sector(struct inode_disk *inode_disk, block_sector_t new_se
             if (free_map_allocate(1, table_sector))
             {
                 memset(&second_block, -1, sizeof(struct inode_indirect_block));
-                first_dirty = true;
+                if (second_block.map_table[sec_loc.index1] == (block_sector_t)-1)
+                {
+                    second_block.map_table[sec_loc.index1] = new_sector;
+                }
+                buffer_cache_write(inode_disk->double_indirect_block_sec, &first_block, 0, sizeof(struct inode_indirect_block), 0);
+                buffer_cache_write(*table_sector, &second_block, 0, sizeof(struct inode_indirect_block), 0);
             }
             else
             {
@@ -467,18 +471,13 @@ static bool register_sector(struct inode_disk *inode_disk, block_sector_t new_se
         else
         {
             buffer_cache_read(*table_sector, &second_block, 0, sizeof(struct inode_indirect_block), 0);
-        }
-        if (second_block.map_table[sec_loc.index1] == (block_sector_t)-1)
-        {
-            second_block.map_table[sec_loc.index1] = new_sector;
-        }
-
-        if (first_dirty)
-        {
-            buffer_cache_write(inode_disk->double_indirect_block_sec, &first_block, 0, sizeof(struct inode_indirect_block), 0);
+            if (second_block.map_table[sec_loc.index1] == (block_sector_t)-1)
+            {
+                second_block.map_table[sec_loc.index1] = new_sector;
+            }
+            buffer_cache_write(*table_sector, &second_block, 0, sizeof(struct inode_indirect_block), 0);
         }
 
-        buffer_cache_write(*table_sector, &second_block, 0, sizeof(struct inode_indirect_block), 0);
         return true;
     }
     return false;
